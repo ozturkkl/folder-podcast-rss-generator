@@ -1,0 +1,21 @@
+{
+  "name": "folder-rss-generator",
+  "version": "1.0.0",
+  "description": "Generates an audio RSS feed from nested folders.",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node index.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "rss": "^1.2.2",
+    "ts-node": "^10.9.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/rss": "^0.0.32"
+  }
+}
