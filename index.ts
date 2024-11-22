@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import RSS from "rss";
 import dotenv from "dotenv";
+import { v4 as uuid } from "uuid";
 
 dotenv.config();
 
@@ -9,6 +10,7 @@ dotenv.config();
 const mainDirectory = process.env.MAIN_DIRECTORY;
 const nextCloudRootShare = process.env.NEXT_CLOUD_ROOT_SHARE;
 const defaultWebsite = process.env.DEFAULT_WEBSITE ?? "https://example.com";
+const getMP3Duration = require("get-mp3-duration");
 
 // Helper function to generate url path for a given pathname + filename
 const generateUrlPath = (combinedPath: string, encode = true) => {
@@ -45,6 +47,38 @@ const generateFeedForFolder = async (
     site_url: defaultWebsite,
     image_url: coverImage,
     language: "en",
+    custom_namespaces: {
+      itunes: "http://www.itunes.com/dtds/podcast-1.0.dtd",
+      podcast: "https://podcastindex.org/namespace/1.0",
+      atom: "http://www.w3.org/2005/Atom",
+      content: "http://purl.org/rss/1.0/modules/content/",
+    },
+    custom_elements: [
+      {
+        "itunes:category": [
+          { _attr: { text: "Religion & Spirituality" } },
+          { "itunes:category": { _attr: { text: "Islam" } } },
+        ],
+      },
+      {
+        "itunes:category": [
+          { _attr: { text: "Education" } },
+          { "itunes:category": { _attr: { text: "Self-Improvement" } } },
+        ],
+      },
+      { "itunes:explicit": "false" },
+      { "itunes:image": { _attr: { href: coverImage } } },
+      // { "podcast:guid": "359ea2e9-9236-5a58-b51b-cfbb001b1b28" },
+      // { "itunes:author": "Podcast Author" },
+      // { "itunes:subtitle": "Podcast Subtitle" },
+      // { "itunes:summary": "Podcast Summary" },
+      // {
+      //   "itunes:owner": [
+      //     { "itunes:name": "Owner Name" },
+      //     { "itunes:email": "owner@example.com" },
+      //   ],
+      // },
+    ],
   });
 
   // Add each MP3 file as an episode
@@ -55,13 +89,21 @@ const generateFeedForFolder = async (
     if (file.endsWith(".mp3")) {
       const fileTitle = path.basename(file, ".mp3"); // Episode title
       const fileUrl = generateUrlPath(`${folderName}/${file}`); // Episode URL
+      const buffer = await fs.readFileSync(filePath);
+      const durationMS = getMP3Duration(buffer);
 
       feed.item({
         title: fileTitle,
+        enclosure: { url: fileUrl, type: "audio/mpeg", size: stat.size },
+        // guid: someUniqueIdentifier uuid,
         description: `Episode: ${fileTitle}`,
         url: fileUrl,
         date: new Date(),
-        enclosure: { url: fileUrl, type: "audio/mpeg" },
+        custom_elements: [
+          { "itunes:duration": Math.floor(durationMS / 1000) },
+          { "itunes:image": { _attr: { href: coverImage } } },
+          { "itunes:explicit": "false" },
+        ],
       });
     }
   }
