@@ -4,7 +4,9 @@
   "description": "Generates an audio RSS feed from nested folders.",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node index.ts"
+    "start": "ts-node index.ts",
+    "refresh": "ts-node index.ts --refresh",
+    "watch": "ts-node index.ts --watch"
   },
   "author": "",
   "license": "ISC",
