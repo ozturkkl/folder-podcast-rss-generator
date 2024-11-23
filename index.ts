@@ -1,7 +1,7 @@
-import fs from "fs-extra";
-import path from "path";
-import RSS from "rss";
-import dotenv from "dotenv";
+import * as fs from "fs-extra";
+import * as path from "path";
+import * as RSS from "rss";
+import * as dotenv from "dotenv";
 import { v4 as uuid } from "uuid";
 
 dotenv.config();
@@ -9,12 +9,6 @@ dotenv.config();
 const mainDirectory = process.env.MAIN_DIRECTORY;
 const rootShareUrl = process.env.ROOT_SHARE_URL;
 const ignoreChangedLinesIncluding = ["<lastBuildDate>"];
-
-let defaultMetadata = {
-  coverUrl: "https://example.com/cover.jpg",
-  websiteUrl: "https://example.com",
-  categories: ["Religion & Spirituality", "Education"],
-};
 
 if (process.argv.includes("--watch")) {
   if (!mainDirectory) {
@@ -53,7 +47,12 @@ async function generateFeeds(refresh = false) {
     }
 
     // Read or create metadata.json file for default values
-    defaultMetadata = await readJsonSafe<typeof defaultMetadata>(
+    const defaultMetadata = {
+      coverUrl: generateUrlPath("cover.png"),
+      websiteUrl: "https://example.com",
+      categories: ["Religion & Spirituality", "Education"],
+    };
+    const metadata = await readJsonSafe<typeof defaultMetadata>(
       path.join(mainDirectory, "metadata.json"),
       defaultMetadata
     );
@@ -70,6 +69,7 @@ async function generateFeeds(refresh = false) {
         const feedURL = await generateFeedForFolder(
           folderPath,
           folder,
+          metadata,
           refresh
         );
         feedURLS.push(feedURL);
@@ -91,12 +91,17 @@ async function generateFeeds(refresh = false) {
 async function generateFeedForFolder(
   folderPath: string,
   folderName: string,
+  metadata: {
+    coverUrl: string;
+    websiteUrl: string;
+    categories: string[];
+  },
   refresh = false
 ) {
   const files = await fs.readdir(folderPath);
 
   // Find the cover image ending with .jpg or .png and rename it to cover.*
-  let coverUrl = defaultMetadata.coverUrl;
+  let coverUrl = metadata.coverUrl;
   for (const file of files) {
     if (file.endsWith(".jpg") || file.endsWith(".png")) {
       // rename the file to cover.*
@@ -114,8 +119,8 @@ async function generateFeedForFolder(
   let channelMetadata = {
     title: folderName,
     description: `${folderName}`,
-    site_url: defaultMetadata.websiteUrl,
-    categories: defaultMetadata.categories,
+    site_url: metadata.websiteUrl,
+    categories: metadata.categories,
     explicit: false,
     guid: uuid(),
     date: new Date().toISOString(),
@@ -243,16 +248,24 @@ async function generateFeedForFolder(
 
 // Helper function to generate url path for a given pathname + filename
 function generateUrlPath(combinedPath: string, encode = true) {
-  const folderName =
-    path.dirname(combinedPath) !== "." ? path.dirname(combinedPath) : "";
-  const fileName = path.basename(combinedPath);
-  const newPath = encode
-    ? folderName.split(path.sep).map(encodeURIComponent).join("/") +
-      "/" +
-      encodeURIComponent(fileName)
-    : folderName + "/" + fileName;
+  let folderName = path.dirname(combinedPath);
+  let fileName = path.basename(combinedPath);
 
-  return `${rootShareUrl}/${newPath}`;
+  if (folderName === ".") {
+    folderName = "";
+  } else {
+    folderName = folderName + path.sep;
+  }
+
+  let finalCombinedPath = folderName + fileName;
+  if (encode) {
+    finalCombinedPath = finalCombinedPath
+      .split(path.sep)
+      .map(encodeURIComponent)
+      .join("/");
+  }
+
+  return `${rootShareUrl}/${finalCombinedPath}`;
 }
 
 function getNewDateString(index: number, referenceDate: string) {
