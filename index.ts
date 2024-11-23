@@ -3,6 +3,7 @@ import * as path from "path";
 import * as RSS from "rss";
 import * as dotenv from "dotenv";
 import { v4 as uuid } from "uuid";
+import * as chokidar from "chokidar";
 
 dotenv.config();
 
@@ -21,7 +22,13 @@ if (process.argv.includes("--watch")) {
   );
   let generatingFeeds = false;
   generateFeeds(process.argv.includes("--refresh")).then(() => {
-    fs.watch(mainDirectory, async (_eventType, pathName) => {
+    const watcher = chokidar.watch(mainDirectory, {
+      persistent: true,
+      usePolling: true,
+      interval: 1000,
+      atomic: 1000,
+    });
+    watcher.on("change", async (pathName: string) => {
       if (generatingFeeds) {
         return;
       }
@@ -32,6 +39,23 @@ if (process.argv.includes("--watch")) {
       }
       generatingFeeds = false;
     });
+    // fs.watch(
+    //   mainDirectory,
+    //   {
+    //     persistent: true,
+    //   },
+    //   async (_eventType, pathName) => {
+    //     if (generatingFeeds) {
+    //       return;
+    //     }
+    //     generatingFeeds = true;
+    //     if (pathName) {
+    //       console.log(`File ${pathName} changed. Generating feeds...`);
+    //       await generateFeeds();
+    //     }
+    //     generatingFeeds = false;
+    //   }
+    // );
   });
 } else {
   generateFeeds(process.argv.includes("--refresh"));
