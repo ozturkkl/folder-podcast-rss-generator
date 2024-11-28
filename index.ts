@@ -9,6 +9,9 @@ dotenv.config();
 const mainDirectory = process.env.MAIN_DIRECTORY;
 const rootShareUrl = process.env.ROOT_SHARE_URL;
 const ignoreChangedLinesIncluding = ["<lastBuildDate>"];
+const dateRegex =
+  /(?<y1>\d{4}).{1,3}(?<m1>\d{1,2}).{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2}).{1,3}(?<m2>\d{1,2}).{1,3}(?<y2>\d{4})/;
+const dateStandard = "Y.M.D";
 
 if (process.argv.includes("--watch")) {
   if (!mainDirectory) {
@@ -52,7 +55,7 @@ async function generateFeeds(refresh = false) {
       websiteUrl: "https://example.com",
       categories: ["Religion & Spirituality", "Education"],
     };
-    const metadata = await readJsonSafe<typeof defaultMetadata>(
+    const metadata = await readCreateJsonSafe<typeof defaultMetadata>(
       path.join(mainDirectory, "metadata.json"),
       defaultMetadata
     );
@@ -129,6 +132,7 @@ async function generateFeedForFolder(
   type ItemMetadata = Record<
     string,
     {
+      title: string;
       description: string;
       guid: string;
       date: string;
@@ -143,7 +147,7 @@ async function generateFeedForFolder(
       }
     }
   }
-  channelMetadata = await readJsonSafe<typeof channelMetadata>(
+  channelMetadata = await readCreateJsonSafe<typeof channelMetadata>(
     channelMetadataFilePath,
     channelMetadata
   );
@@ -182,6 +186,32 @@ async function generateFeedForFolder(
     });
   }
 
+  // Try parsing date form name if exists
+  const mp3Files = (await fs.readdir(itemsFolder)).filter((file) =>
+    file.endsWith(".mp3")
+  );
+  for (const file of mp3Files) {
+    const { date, title } = tryParsingDateFromName(file);
+    if (date && title) {
+      channelMetadata.itemMetadata[file] = {
+        ...channelMetadata.itemMetadata[file],
+        date: date.toISOString(),
+        title: path.basename(title, ".mp3"),
+      };
+
+      // Rename the file with new standard date format
+      const formattedDate = dateStandard
+        .replace(/Y/, date.getFullYear().toString())
+        .replace(/M/, (date.getMonth() + 1).toString().padStart(2, "0"))
+        .replace(/D/, date.getDate().toString().padStart(2, "0"));
+      const newFileName = `${formattedDate} - ${title}`;
+      await fs.rename(
+        path.join(itemsFolder, file),
+        path.join(itemsFolder, newFileName)
+      );
+    }
+  }
+
   // Add each MP3 file as an episode
   const sortedMP3Files = (await fs.readdir(itemsFolder))
     .filter((file) => file.endsWith(".mp3"))
@@ -200,12 +230,14 @@ async function generateFeedForFolder(
   for (const [index, file] of sortedMP3Files.entries()) {
     const filePath = path.join(itemsFolder, file);
     const stat = await fs.stat(filePath);
-    const fileTitle = path.basename(file, ".mp3"); // Episode title
     const fileUrl = generateUrlPath(`${folderName}/items/${file}`); // Episode URL
     const buffer = await fs.readFile(filePath);
     const durationMS = getMP3Duration(buffer);
 
     // Get existing metadata or generate new metadata
+    const title =
+      channelMetadata.itemMetadata?.[file]?.title ??
+      path.basename(file, ".mp3");
     const guid = channelMetadata.itemMetadata?.[file]?.guid || uuid();
     const description =
       channelMetadata.itemMetadata?.[file]?.description ??
@@ -215,10 +247,10 @@ async function generateFeedForFolder(
       getNewDateString(sortedMP3Files.length - index, channelMetadata.date);
 
     // Replace the metadata in the metadata.json file for existing episodes only
-    newItemMetadata[file] = { description, guid, date };
+    newItemMetadata[file] = { description, guid, date, title };
 
     feed.item({
-      title: fileTitle,
+      title,
       enclosure: { url: fileUrl, type: "audio/mpeg", size: stat.size },
       guid,
       description,
@@ -244,6 +276,27 @@ async function generateFeedForFolder(
   console.log(`Generated RSS feed for podcast: ${folderName}`);
 
   return generateUrlPath(`${folderName}/feed.xml`);
+}
+
+function tryParsingDateFromName(fileName: string) {
+  try {
+    const dateMatch = fileName.match(dateRegex);
+    if (dateMatch) {
+      const date = new Date(
+        Number(dateMatch.groups?.y1 ?? dateMatch.groups?.y2),
+        Number(dateMatch.groups?.m1 ?? dateMatch.groups?.m2) - 1,
+        Number(dateMatch.groups?.d1 ?? dateMatch.groups?.d2)
+      );
+      date.toISOString();
+      const title = fileName
+        .replace(dateMatch[0], "")
+        .replace(/^[ \-_=+;:!@#$%^&*){}\]/\\.,?|]+/, "");
+      return { date, title };
+    }
+  } catch (error) {
+    console.error("Error parsing date:", error);
+  }
+  return {};
 }
 
 // Helper function to generate url path for a given pathname + filename
@@ -281,7 +334,7 @@ function getNewDateString(index: number, referenceDate: string) {
   }
 }
 
-async function readJsonSafe<T>(path: string, defaultValue: T) {
+async function readCreateJsonSafe<T>(path: string, defaultValue: T) {
   if (await fs.exists(path)) {
     try {
       const value = {
