@@ -11,7 +11,7 @@ const mainDirectory = process.env.MAIN_DIRECTORY;
 const rootShareUrl = process.env.ROOT_SHARE_URL;
 const ignoreChangedLinesIncluding = ["<lastBuildDate>"];
 const dateRegex =
-  /(?<y1>\d{4}).{1,3}(?<m1>\d{1,2}).{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2}).{1,3}(?<m2>\d{1,2}).{1,3}(?<y2>\d{4})/;
+  /(?<y1>\d{4})\D{1,3}(?<m1>\d{1,2})\D{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2})\D{1,3}(?<m2>\d{1,2})\D{1,3}(?<y2>\d{4})/;
 const dateStandard = "Y.M.D";
 
 if (process.argv.includes("--watch")) {
