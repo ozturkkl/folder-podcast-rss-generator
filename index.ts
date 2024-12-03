@@ -120,7 +120,7 @@ async function generateFeedForFolder(
       if (file !== `cover${extension}`) {
         await fs.rename(path.join(folderPath, file), coverImageFilePath);
       }
-      coverUrl = generateUrlPath(`${folderName}/${file}`);
+      coverUrl = generateUrlPath(`${folderName}/cover${extension}`);
       break;
     }
   }
@@ -143,6 +143,7 @@ async function generateFeedForFolder(
       description: string;
       guid: string;
       date: string;
+      duration: number;
     }
   >;
   const channelMetadataFilePath = path.join(folderPath, "metadata.json");
@@ -238,8 +239,6 @@ async function generateFeedForFolder(
     const filePath = path.join(itemsFolder, file);
     const stat = await fs.stat(filePath);
     const fileUrl = generateUrlPath(`${folderName}/items/${file}`); // Episode URL
-    const buffer = await fs.readFile(filePath);
-    const durationMS = getMP3Duration(buffer);
 
     // Get existing metadata or generate new metadata
     const title =
@@ -252,9 +251,12 @@ async function generateFeedForFolder(
     const date =
       channelMetadata.itemMetadata?.[file]?.date ??
       getNewDateString(sortedMP3Files.length - index, channelMetadata.date);
+    const duration =
+      channelMetadata.itemMetadata?.[file].duration ??
+      getMP3Duration(await fs.readFile(filePath));
 
     // Replace the metadata in the metadata.json file for existing episodes only
-    newItemMetadata[file] = { description, guid, date, title };
+    newItemMetadata[file] = { description, guid, date, title, duration };
 
     feed.item({
       title,
@@ -264,7 +266,7 @@ async function generateFeedForFolder(
       url: fileUrl,
       date,
       custom_elements: [
-        { "itunes:duration": Math.floor(durationMS / 1000) },
+        { "itunes:duration": Math.floor(duration / 1000) },
         { "itunes:image": { _attr: { href: coverUrl } } },
         { "itunes:explicit": channelMetadata.explicit ? "true" : "false" },
       ],
