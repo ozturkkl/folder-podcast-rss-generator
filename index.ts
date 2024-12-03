@@ -13,7 +13,7 @@ const ignoreChangedLinesIncluding = ["<lastBuildDate>"];
 const dateRegex =
   /(?<y1>\d{4})\D{1,3}(?<m1>\d{1,2})\D{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2})\D{1,3}(?<m2>\d{1,2})\D{1,3}(?<y2>\d{4})/;
 const dateStandard = "Y.M.D";
-const rerunInterval = 1000 * 60 * 60 * 12; // 12 hours
+const rerunInterval = 1000 * 60 * 60 * 4; // 4 hours
 
 if (process.argv.includes("--watch")) {
   if (!mainDirectory) {
@@ -27,9 +27,11 @@ if (process.argv.includes("--watch")) {
   let generatingFeeds = false;
   generateFeeds(process.argv.includes("--refresh")).then(() => {
     const watcher = chokidar.watch(mainDirectory, {
-      // usePolling: true,
-      // interval: 10000,
-      // ignoreInitial: true,
+      usePolling: true,
+      interval: 1000 * 60,
+      binaryInterval: 1000 * 60 * 10,
+      ignoreInitial: true,
+      awaitWriteFinish: true,
     });
     setInterval(async () => {
       if (!generatingFeeds) {
