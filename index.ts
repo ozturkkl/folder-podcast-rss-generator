@@ -135,10 +135,24 @@ async function generateFeedForFolder(
     }
   }
 
+  // Find description.txt file and use it as the podcast description if exists
+  const descriptionFilePath = path.join(folderPath, "description.txt");
+  let description = `${folderName}`;
+  try {
+    if (await fs.exists(descriptionFilePath)) {
+      description = await fs.readFile(descriptionFilePath, "utf-8");
+    }
+  } catch (error) {
+    console.error(
+      "Error reading description file, falling back to folder name:",
+      error
+    );
+  }
+
   // Find or create the metadata.json file
   let channelMetadata = {
     title: folderName,
-    description: `${folderName}`,
+    description,
     site_url: metadata.websiteUrl,
     categories: metadata.categories,
     explicit: false,
@@ -262,7 +276,7 @@ async function generateFeedForFolder(
       channelMetadata.itemMetadata?.[file]?.date ??
       getNewDateString(sortedMP3Files.length - index, channelMetadata.date);
     const duration =
-      channelMetadata.itemMetadata?.[file].duration ??
+      channelMetadata.itemMetadata?.[file]?.duration ??
       getMP3Duration(await fs.readFile(filePath));
 
     // Replace the metadata in the metadata.json file for existing episodes only
