@@ -249,8 +249,8 @@ async function generateFeedForFolder(
     .filter((file) => file.endsWith(".mp3"))
     .sort((a, b) => {
       // add code to fix not having padded zeros
-      const aNumberPart = a.match(/\d+/);
-      const bNumberPart = b.match(/\d+/);
+      const aNumberPart = path.basename(a, ".mp3").match(/\d+/);
+      const bNumberPart = path.basename(b, ".mp3").match(/\d+/);
       if (aNumberPart && bNumberPart) {
         return parseInt(aNumberPart[0]) - parseInt(bNumberPart[0]);
       }
