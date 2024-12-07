@@ -157,7 +157,7 @@ async function generateFeedForFolder(
     categories: metadata.categories,
     explicit: false,
     guid: uuid(),
-    date: new Date().toISOString(),
+    pubDate: new Date().toISOString(),
     itemMetadata: {} as ItemMetadata,
   };
   type ItemMetadata = Record<
@@ -196,8 +196,6 @@ async function generateFeedForFolder(
       atom: "http://www.w3.org/2005/Atom",
       content: "http://purl.org/rss/1.0/modules/content/",
     },
-    categories: channelMetadata.categories,
-
     custom_elements: [
       ...channelMetadata.categories.map((category) => ({
         "itunes:category": { _attr: { text: category } },
@@ -261,8 +259,8 @@ async function generateFeedForFolder(
 
   for (const [index, file] of sortedMP3Files.entries()) {
     const filePath = path.join(itemsFolder, file);
-    const stat = await fs.stat(filePath);
-    const fileUrl = generateUrlPath(`${folderName}/items/${file}`); // Episode URL
+    const { size } = await fs.stat(filePath);
+    const url = generateUrlPath(`${folderName}/items/${file}`); // Episode URL
 
     // Get existing metadata or generate new metadata
     const title =
@@ -274,7 +272,7 @@ async function generateFeedForFolder(
       `Episode: ${index + 1}`;
     const date =
       channelMetadata.itemMetadata?.[file]?.date ??
-      getNewDateString(sortedMP3Files.length - index, channelMetadata.date);
+      getNewDateString(sortedMP3Files.length - index, channelMetadata.pubDate);
     const duration =
       channelMetadata.itemMetadata?.[file]?.duration ??
       getMP3Duration(await fs.readFile(filePath));
@@ -284,10 +282,10 @@ async function generateFeedForFolder(
 
     feed.item({
       title,
-      enclosure: { url: fileUrl, type: "audio/mpeg", size: stat.size },
+      enclosure: { url, type: "audio/mpeg", size },
       guid,
       description,
-      url: fileUrl,
+      url,
       date,
       custom_elements: [
         { "itunes:duration": Math.floor(duration / 1000) },
