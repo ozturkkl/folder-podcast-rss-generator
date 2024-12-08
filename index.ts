@@ -119,7 +119,7 @@ async function generateFeeds(refresh = false) {
         )
         .reverse()
         .map(([_, urls]) => urls.join("\n"))
-        .join("\n\n")
+        .join("\n")
     );
     console.log("All RSS feeds generated successfully!");
   } catch (error) {
