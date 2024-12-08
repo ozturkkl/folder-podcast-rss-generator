@@ -367,6 +367,7 @@ function tryParsingDateFromName(fileName: string) {
 
 // Helper function to generate url path for a given pathname + filename
 function generateUrlPath(combinedPath: string, encode = true) {
+  combinedPath = combinedPath.replace("/", path.sep);
   let folderName = path.dirname(combinedPath);
   let fileName = path.basename(combinedPath);
 
