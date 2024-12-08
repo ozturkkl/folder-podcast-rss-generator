@@ -14,6 +14,12 @@ const dateRegex =
   /(?<y1>\d{4})\D{1,3}(?<m1>\d{1,2})\D{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2})\D{1,3}(?<m2>\d{1,2})\D{1,3}(?<y2>\d{4})/;
 const dateStandard = "Y.M.D";
 const rerunInterval = 1000 * 60 * 60 * 4; // 4 hours
+const defaultMetadata = {
+  coverUrl: generateUrlPath("cover.png"),
+  websiteUrl: "https://example.com",
+  categories: ["Religion & Spirituality", "Education"],
+  prefixPriority: [] as string[],
+};
 
 if (process.argv.includes("--watch")) {
   if (!mainDirectory) {
@@ -35,7 +41,7 @@ if (process.argv.includes("--watch")) {
     });
     setInterval(async () => {
       if (!generatingFeeds) {
-        console.log("Daily feeds generation...");
+        console.log("Interval feeds generation...");
         generatingFeeds = true;
         await generateFeeds();
         generatingFeeds = false;
@@ -67,18 +73,17 @@ async function generateFeeds(refresh = false) {
     }
 
     // Read or create metadata.json file for default values
-    const defaultMetadata = {
-      coverUrl: generateUrlPath("cover.png"),
-      websiteUrl: "https://example.com",
-      categories: ["Religion & Spirituality", "Education"],
-    };
     const metadata = await readCreateJsonSafe<typeof defaultMetadata>(
       path.join(mainDirectory, "metadata.json"),
       defaultMetadata
     );
 
     const folders = await fs.readdir(mainDirectory);
-    const feedURLS = [];
+    const feedURLS: {
+      [priority: number]: string[];
+    } = {};
+
+    const reversedPrefixPriority = metadata.prefixPriority.reverse();
 
     for (const folder of folders) {
       const folderPath = path.join(mainDirectory, folder);
@@ -92,14 +97,29 @@ async function generateFeeds(refresh = false) {
           metadata,
           refresh
         );
-        feedURLS.push(feedURL);
+
+        // push to feedURLS by priority
+        const priority = reversedPrefixPriority.findIndex((prefix) =>
+          folder.split("-")[0]?.trim().includes(prefix)
+        );
+
+        if (!feedURLS[priority]) {
+          feedURLS[priority] = [];
+        }
+        feedURLS[priority].push(feedURL);
       }
     }
 
     // Save all feed URLs to a text file
     await writeFileIfChanged(
       path.join(mainDirectory, "feed_urls.txt"),
-      feedURLS.map((url) => url).join("\n")
+      Object.entries(feedURLS)
+        .sort(
+          ([priority1], [priority2]) => Number(priority1) - Number(priority2)
+        )
+        .reverse()
+        .map(([_, urls]) => urls.join("\n"))
+        .join("\n\n")
     );
     console.log("All RSS feeds generated successfully!");
   } catch (error) {
@@ -111,11 +131,7 @@ async function generateFeeds(refresh = false) {
 async function generateFeedForFolder(
   folderPath: string,
   folderName: string,
-  metadata: {
-    coverUrl: string;
-    websiteUrl: string;
-    categories: string[];
-  },
+  metadata: typeof defaultMetadata,
   refresh = false
 ) {
   const files = await fs.readdir(folderPath);
@@ -135,24 +151,10 @@ async function generateFeedForFolder(
     }
   }
 
-  // Find description.txt file and use it as the podcast description if exists
-  const descriptionFilePath = path.join(folderPath, "description.txt");
-  let description = `${folderName}`;
-  try {
-    if (await fs.exists(descriptionFilePath)) {
-      description = await fs.readFile(descriptionFilePath, "utf-8");
-    }
-  } catch (error) {
-    console.error(
-      "Error reading description file, falling back to folder name:",
-      error
-    );
-  }
-
   // Find or create the metadata.json file
   let channelMetadata = {
     title: folderName,
-    description,
+    description: folderName,
     site_url: metadata.websiteUrl,
     categories: metadata.categories,
     explicit: false,
@@ -184,9 +186,43 @@ async function generateFeedForFolder(
     channelMetadata
   );
 
+  // Strip folder name from priority prefixes separated by '-'
+  channelMetadata.title = folderName
+    .split("-")
+    .filter(
+      (part) =>
+        metadata.prefixPriority.findIndex(
+          (prefix) =>
+            part.toLocaleLowerCase().trim() ===
+            prefix.toLocaleLowerCase().trim()
+        ) === -1
+    )
+    .join("-")
+    .trim();
+
+  // Find description.txt file and use it as the podcast description if exists
+  const descriptionFilePath = path.join(folderPath, "description.txt");
+  channelMetadata.description = `${channelMetadata.title}`;
+  try {
+    if (await fs.exists(descriptionFilePath)) {
+      channelMetadata.description = await fs.readFile(
+        descriptionFilePath,
+        "utf-8"
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Error reading description file, falling back to folder name:",
+      error
+    );
+  }
+
+  writeJsonIfChanged(channelMetadataFilePath, channelMetadata);
+
+  console.log(`Generating RSS feed for podcast: ${channelMetadata.title}`);
+
   const feed = new RSS({
     ...channelMetadata,
-
     feed_url: generateUrlPath(`${folderName}/feed.xml`),
     image_url: coverUrl,
     language: "en",
@@ -304,7 +340,6 @@ async function generateFeedForFolder(
   // Save the feed to an XML file
   const rssFilePath = path.join(folderPath, "feed.xml");
   await writeFileIfChanged(rssFilePath, feed.xml({ indent: true }));
-  console.log(`Generated RSS feed for podcast: ${folderName}`);
 
   return generateUrlPath(`${folderName}/feed.xml`);
 }
@@ -365,7 +400,10 @@ function getNewDateString(index: number, referenceDate: string) {
   }
 }
 
-async function readCreateJsonSafe<T>(path: string, defaultValue: T) {
+async function readCreateJsonSafe<T>(
+  path: string,
+  defaultValue: T
+): Promise<T> {
   if (await fs.exists(path)) {
     try {
       const value = {
@@ -433,50 +471,89 @@ async function writeFileIfChanged(path: string, value: string) {
   console.log(`Writing file: ${path}`);
   console.log(
     "Old: ",
-    changedLines.reduce((acc, change) => acc + change.old, "")
+    changedLines.reduce((acc, change) => acc + change.old + "\n", "")
   );
   console.log(
     "New: ",
-    changedLines.reduce((acc, change) => acc + change.new, "")
+    changedLines.reduce((acc, change) => acc + change.new + "\n", "")
   );
   await fs.writeFile(path, value);
 }
 
-function getChangedLines(oldValue = "", newValue: string) {
-  let changes: {
-    old: string;
-    new: string;
-  }[] = [];
-  for (let i = 0; i < Math.min(oldValue.length, newValue.length); i++) {
-    if (oldValue[i] !== newValue[i]) {
-      let start = i;
-      let end = i;
-      while (oldValue[start] !== "\n" && start > 0) {
-        start--;
-      }
-      while (oldValue[end] !== "\n" && end < oldValue.length) {
-        end++;
-      }
-      changes.push({
-        old: oldValue.substring(start, end),
-        new: newValue.substring(start, end),
-      });
+function getChangedLines(
+  oldValue: string = "",
+  newValue: string,
+  lookAheadLimit = 100
+): { old: string; new: string }[] {
+  const oldLines = oldValue.split("\n");
+  const newLines = newValue.split("\n");
 
-      i = end;
+  const changes: { old: string; new: string }[] = [];
+
+  let i = 0;
+  let j = 0;
+
+  while (i < oldLines.length || j < newLines.length) {
+    if (i >= oldLines.length) {
+      // Remaining lines in new file (added lines)
+      changes.push({ old: "", new: newLines[j] });
+      j++;
+    } else if (j >= newLines.length) {
+      // Remaining lines in old file (removed lines)
+      changes.push({ old: oldLines[i], new: "" });
+      i++;
+    } else if (oldLines[i] === newLines[j]) {
+      // Matching lines, move both pointers
+      i++;
+      j++;
+    } else {
+      // Check for line shifts or edits
+      let foundMatch = false;
+
+      // Look ahead in the new file for a match (line added)
+      for (
+        let lookAhead = 1;
+        lookAhead <= lookAheadLimit && j + lookAhead < newLines.length;
+        lookAhead++
+      ) {
+        if (oldLines[i] === newLines[j + lookAhead]) {
+          // Lines were added in the new file
+          for (let k = 0; k < lookAhead; k++) {
+            changes.push({ old: "", new: newLines[j + k] });
+          }
+          j += lookAhead;
+          foundMatch = true;
+          break;
+        }
+      }
+
+      // Look ahead in the old file for a match (line removed)
+      if (!foundMatch) {
+        for (
+          let lookAhead = 1;
+          lookAhead <= lookAheadLimit && i + lookAhead < oldLines.length;
+          lookAhead++
+        ) {
+          if (oldLines[i + lookAhead] === newLines[j]) {
+            // Lines were removed in the old file
+            for (let k = 0; k < lookAhead; k++) {
+              changes.push({ old: oldLines[i + k], new: "" });
+            }
+            i += lookAhead;
+            foundMatch = true;
+            break;
+          }
+        }
+      }
+
+      // If still no match, it's a modified line
+      if (!foundMatch) {
+        changes.push({ old: oldLines[i], new: newLines[j] });
+        i++;
+        j++;
+      }
     }
   }
 
-  if (oldValue.length !== newValue.length) {
-    changes.push({
-      old: oldValue.substring(
-        Math.min(oldValue.length, newValue.length),
-        oldValue.length
-      ),
-      new: newValue.substring(
-        Math.min(oldValue.length, newValue.length),
-        newValue.length
-      ),
-    });
-  }
   return changes;
 }
