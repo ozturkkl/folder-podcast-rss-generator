@@ -282,13 +282,15 @@ async function generateFeedForFolder(
   const sortedMP3Files = (await fs.readdir(itemsFolder))
     .filter((file) => file.endsWith(".mp3"))
     .sort((a, b) => {
-      // add code to fix not having padded zeros
-      const aNumberPart = path.basename(a, ".mp3").match(/\d+/);
-      const bNumberPart = path.basename(b, ".mp3").match(/\d+/);
-      if (aNumberPart && bNumberPart) {
-        return parseInt(aNumberPart[0]) - parseInt(bNumberPart[0]);
+      // add padded zeroes to the number parts of the file name
+      a.replace(/\d+/g, (match) => match.padStart(10, "0"));
+      b.replace(/\d+/g, (match) => match.padStart(10, "0"));
+      // sort by file name
+      if (a < b) {
+        return -1;
+      } else {
+        return 1;
       }
-      return 0;
     });
   const getMP3Duration = require("get-mp3-duration");
   const newItemMetadata = {} as ItemMetadata;
