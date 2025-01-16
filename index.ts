@@ -11,7 +11,7 @@ const mainDirectory = process.env.MAIN_DIRECTORY;
 const rootShareUrl = process.env.ROOT_SHARE_URL;
 const ignoreChangedLinesIncluding = ["<lastBuildDate>"];
 const dateRegex =
-  /(?<y1>\d{4})\D{1,3}(?<m1>\d{1,2})\D{1,3}(?<d1>\d{1,2})|(?<d2>\d{1,2})\D{1,3}(?<m2>\d{1,2})\D{1,3}(?<y2>\d{4})/;
+  /(?<y1>\d{4})\D(?<m1>\d{1,2})\D(?<d1>\d{1,2})|(?<d2>\d{1,2})\D(?<m2>\d{1,2})\D(?<y2>\d{4})/;
 const dateStandard = "Y.M.D";
 const rerunInterval = 1000 * 60 * 60 * 4; // 4 hours
 const defaultMetadata = {
@@ -34,7 +34,7 @@ if (process.argv.includes("--watch")) {
   generateFeeds(process.argv.includes("--refresh")).then(() => {
     const watcher = chokidar.watch(mainDirectory, {
       usePolling: true,
-      interval: 1000 * 5,
+      interval: 1000 * 60,
       binaryInterval: 1000 * 60 * 30,
       ignoreInitial: true,
       awaitWriteFinish: true,
@@ -72,8 +72,43 @@ async function generateFeeds(refresh = false) {
       throw new Error("NEXT_CLOUD_ROOT_SHARE environment variable is not set.");
     }
 
+    if (refresh) {
+      // remove all metadata.json and feed.xml files recursively
+      const files = await fs.readdir(mainDirectory, { recursive: true });
+      for (const file of files) {
+        if (typeof file !== "string") {
+          continue;
+        }
+
+        // remove metadata.json and feed.xml files
+        if (
+          file.endsWith(`${path.sep}rss${path.sep}feed.xml`) ||
+          file.endsWith(`${path.sep}rss${path.sep}metadata.json`)
+        ) {
+          console.log(`Removing ${path.join(mainDirectory, file)}`);
+          await fs.remove(path.join(mainDirectory, file));
+        }
+
+        if (
+          file.includes(`${path.sep}`) &&
+          !file.endsWith(`.mp3`) &&
+          !file.endsWith(`.mp2`) &&
+          !file.endsWith(`${path.sep}cover.jpg`) &&
+          !file.endsWith(`${path.sep}cover.png`) &&
+          !file.endsWith(`${path.sep}zaten_indirilenler.md`) &&
+          !file.endsWith(`${path.sep}items`) &&
+          !file.endsWith(`${path.sep}details.json`) &&
+          !file.endsWith(`${path.sep}rss`) &&
+          !file.endsWith(`${path.sep}rss${path.sep}feed.xml`) &&
+          !file.endsWith(`${path.sep}rss${path.sep}metadata.json`)
+        ) {
+          console.warn(`Found unexpected file: ${file}`);
+        }
+      }
+    }
+
     // Read or create metadata.json file for default values
-    const metadata = await readCreateJsonSafe<typeof defaultMetadata>(
+    const metadata = await readCreateJson<typeof defaultMetadata>(
       path.join(mainDirectory, "metadata.json"),
       defaultMetadata
     );
@@ -94,8 +129,7 @@ async function generateFeeds(refresh = false) {
         const feedURL = await generateFeedForFolder(
           folderPath,
           folder,
-          metadata,
-          refresh
+          metadata
         );
 
         // push to feedURLS by priority
@@ -131,8 +165,7 @@ async function generateFeeds(refresh = false) {
 async function generateFeedForFolder(
   folderPath: string,
   folderName: string,
-  metadata: typeof defaultMetadata,
-  refresh = false
+  metadata: typeof defaultMetadata
 ) {
   const files = await fs.readdir(folderPath);
 
@@ -166,53 +199,48 @@ async function generateFeedForFolder(
     string,
     {
       title: string;
-      description: string;
       guid: string;
       date: string;
       duration: number;
+      hideDate: boolean;
     }
   >;
-  const channelMetadataFilePath = path.join(folderPath, "metadata.json");
-  if (refresh) {
-    // Remove all files that include metadata.json
-    for (const file of files) {
-      if (file.includes("metadata.json")) {
-        await fs.remove(path.join(folderPath, file));
-      }
-    }
-  }
-  channelMetadata = await readCreateJsonSafe<typeof channelMetadata>(
+  const channelMetadataFilePath = path.join(folderPath, "rss", "metadata.json");
+  channelMetadata = await readCreateJson<typeof channelMetadata>(
     channelMetadataFilePath,
     channelMetadata
   );
 
   // Strip folder name from priority prefixes separated by '-'
+  channelMetadata.categories = metadata.categories;
   channelMetadata.title = folderName
     .split("-")
-    .filter(
-      (part) =>
-        metadata.prefixPriority.findIndex(
-          (prefix) =>
-            part.toLocaleLowerCase().trim() ===
-            prefix.toLocaleLowerCase().trim()
-        ) === -1
-    )
+    .filter((part) => {
+      const index = metadata.prefixPriority.findIndex(
+        (prefix) =>
+          part.toLocaleLowerCase().trim() === prefix.toLocaleLowerCase().trim()
+      );
+      if (index !== -1) {
+        channelMetadata.categories.push(metadata.prefixPriority[index]);
+      }
+      return index === -1;
+    })
     .join("-")
     .trim();
 
-  // Find description.txt file and use it as the podcast description if exists
-  const descriptionFilePath = path.join(folderPath, "description.txt");
+  // Find details.json file and use it as the podcast description if exists
+  const detailsJsonPath = path.join(folderPath, "details.json");
   channelMetadata.description = `${channelMetadata.title}`;
+  let hideDate = false;
   try {
-    if (await fs.exists(descriptionFilePath)) {
-      channelMetadata.description = await fs.readFile(
-        descriptionFilePath,
-        "utf-8"
-      );
+    if (await fs.exists(detailsJsonPath)) {
+      const details = await fs.readJson(detailsJsonPath);
+      channelMetadata.description = details.description;
+      hideDate = details.hideDate;
     }
   } catch (error) {
     console.error(
-      "Error reading description file, falling back to folder name:",
+      "Error reading details.json file, skipping details.json file",
       error
     );
   }
@@ -223,9 +251,9 @@ async function generateFeedForFolder(
 
   const feed = new RSS({
     ...channelMetadata,
-    feed_url: generateUrlPath(`${folderName}/feed.xml`),
+    feed_url: generateUrlPath(`${folderName}/rss/feed.xml`),
     image_url: coverUrl,
-    language: "en",
+    language: "tr",
     custom_namespaces: {
       itunes: "http://www.itunes.com/dtds/podcast-1.0.dtd",
       podcast: "https://podcastindex.org/namespace/1.0",
@@ -242,43 +270,9 @@ async function generateFeedForFolder(
     ],
   });
 
-  // Move all MP3 files to the "items" folder
+  // Add each MP3 file as an episode
   const itemsFolder = path.join(folderPath, "items");
   await fs.ensureDir(itemsFolder);
-  const mp3FilesToMove = files.filter((file) => file.endsWith(".mp3"));
-  for (const file of mp3FilesToMove) {
-    await fs.move(path.join(folderPath, file), path.join(itemsFolder, file), {
-      overwrite: true,
-    });
-  }
-
-  // Try parsing date form name if exists
-  const mp3Files = (await fs.readdir(itemsFolder)).filter((file) =>
-    file.endsWith(".mp3")
-  );
-  for (const file of mp3Files) {
-    const { date, title } = tryParsingDateFromName(file);
-    if (date && title) {
-      channelMetadata.itemMetadata[file] = {
-        ...channelMetadata.itemMetadata[file],
-        date: date.toISOString(),
-        title: path.basename(title, ".mp3"),
-      };
-
-      // Rename the file with new standard date format
-      const formattedDate = dateStandard
-        .replace(/Y/, date.getFullYear().toString())
-        .replace(/M/, (date.getMonth() + 1).toString().padStart(2, "0"))
-        .replace(/D/, date.getDate().toString().padStart(2, "0"));
-      const newFileName = `${formattedDate} - ${title}`;
-      await fs.rename(
-        path.join(itemsFolder, file),
-        path.join(itemsFolder, newFileName)
-      );
-    }
-  }
-
-  // Add each MP3 file as an episode
   const sortedMP3Files = (await fs.readdir(itemsFolder))
     .filter((file) => file.endsWith(".mp3"))
     .sort((a, b) => {
@@ -300,35 +294,59 @@ async function generateFeedForFolder(
     const { size } = await fs.stat(filePath);
     const url = generateUrlPath(`${folderName}/items/${file}`); // Episode URL
 
+    newItemMetadata[file] = {
+      title: path.basename(file, ".mp3"),
+      guid: uuid(),
+      date: getNewDateString(
+        sortedMP3Files.length - index,
+        channelMetadata.pubDate
+      ),
+      hideDate: true,
+      duration: 0,
+    };
+
+    const { date: dateParsed, title: titleParsed } =
+      tryParsingDateFromName(file);
+    if (dateParsed && titleParsed) {
+      newItemMetadata[file].title = titleParsed;
+      newItemMetadata[file].date = dateParsed.toISOString();
+      newItemMetadata[file].hideDate = hideDate;
+
+      // Rename the file with new standard date format
+      // const formattedDate = dateStandard
+      //   .replace(/Y/, dateParsed.getFullYear().toString())
+      //   .replace(/M/, (dateParsed.getMonth() + 1).toString().padStart(2, "0"))
+      //   .replace(/D/, dateParsed.getDate().toString().padStart(2, "0"));
+      // const newFileName = `${formattedDate} - ${titleParsed}`;
+      // await fs.rename(
+      //   path.join(itemsFolder, file),
+      //   path.join(itemsFolder, newFileName)
+      // );
+    }
+
     // Get existing metadata or generate new metadata
-    const title =
-      channelMetadata.itemMetadata?.[file]?.title ??
-      path.basename(file, ".mp3");
-    const guid = channelMetadata.itemMetadata?.[file]?.guid || uuid();
-    const description =
-      channelMetadata.itemMetadata?.[file]?.description ??
-      `Episode: ${index + 1}`;
-    const date =
-      channelMetadata.itemMetadata?.[file]?.date ??
-      getNewDateString(sortedMP3Files.length - index, channelMetadata.pubDate);
-    const duration =
+    newItemMetadata[file].guid =
+      channelMetadata.itemMetadata?.[file]?.guid ?? uuid();
+    newItemMetadata[file].duration =
       channelMetadata.itemMetadata?.[file]?.duration ??
       getMP3Duration(await fs.readFile(filePath));
 
-    // Replace the metadata in the metadata.json file for existing episodes only
-    newItemMetadata[file] = { description, guid, date, title, duration };
-
     feed.item({
-      title,
+      title: newItemMetadata[file].title,
       enclosure: { url, type: "audio/mpeg", size },
-      guid,
-      description,
+      guid: newItemMetadata[file].guid,
+      description: `Bölüm: ${index + 1}`,
       url,
-      date,
+      date: newItemMetadata[file].date,
       custom_elements: [
-        { "itunes:duration": Math.floor(duration / 1000) },
+        {
+          "itunes:duration": Math.floor(newItemMetadata[file].duration / 1000),
+        },
         { "itunes:image": { _attr: { href: coverUrl } } },
         { "itunes:explicit": channelMetadata.explicit ? "true" : "false" },
+        {
+          hideDate: newItemMetadata[file].hideDate ? "true" : "false",
+        },
       ],
     });
   }
@@ -340,10 +358,10 @@ async function generateFeedForFolder(
   });
 
   // Save the feed to an XML file
-  const rssFilePath = path.join(folderPath, "feed.xml");
+  const rssFilePath = path.join(folderPath, "rss", "feed.xml");
   await writeFileIfChanged(rssFilePath, feed.xml({ indent: true }));
 
-  return generateUrlPath(`${folderName}/feed.xml`);
+  return generateUrlPath(`${folderName}/rss/feed.xml`);
 }
 
 function tryParsingDateFromName(fileName: string) {
@@ -403,59 +421,45 @@ function getNewDateString(index: number, referenceDate: string) {
   }
 }
 
-async function readCreateJsonSafe<T>(
-  path: string,
-  defaultValue: T
-): Promise<T> {
+async function readCreateJson<T>(path: string, defaultValue: T): Promise<T> {
   if (await fs.exists(path)) {
-    try {
-      const value = {
-        ...defaultValue,
-        ...(await fs.readJson(path)),
-      };
-      await writeJsonIfChanged(path, value);
-      return value;
-    } catch (error) {
-      // Backup the errored file and append error message
-      const errorFilePath = path + ".error.txt";
-      await fs.appendFile(
-        errorFilePath,
-        "ERROR HAPPENED:\n\n" +
-          (await fs.readFile(path)) +
-          "\n" +
-          error +
-          "\n\n"
-      );
-
-      // Write a new file with default values
-      await writeJsonIfChanged(path, defaultValue);
-      return defaultValue;
-    }
+    const value = {
+      ...defaultValue,
+      ...(await fs.readJson(path)),
+    };
+    await writeJsonIfChanged(path, value);
+    return value;
   } else {
     await writeJsonIfChanged(path, defaultValue);
     return defaultValue;
   }
 }
 
-async function writeJsonIfChanged<T>(path: string, value: T) {
+async function writeJsonIfChanged<T>(
+  jsonPath: string,
+  value: T | ((oldValue: T) => T)
+) {
   let oldValue: T | undefined;
-  try {
-    oldValue = await fs.readJson(path);
-  } catch (error) {
-    oldValue = undefined;
+  if (await fs.exists(jsonPath)) {
+    oldValue = await fs.readJson(jsonPath);
   }
   if (oldValue && value && JSON.stringify(oldValue) === JSON.stringify(value)) {
     return;
   }
-  await fs.writeJson(path, value, { spaces: 2 });
+  if (typeof value === "function") {
+    const newValue = (value as (oldValue: T) => T)(oldValue as T);
+    await fs.ensureDir(path.dirname(jsonPath));
+    await fs.writeJson(jsonPath, newValue, { spaces: 2 });
+  } else {
+    await fs.ensureDir(path.dirname(jsonPath));
+    await fs.writeJson(jsonPath, value, { spaces: 2 });
+  }
 }
 
 async function writeFileIfChanged(path: string, value: string) {
   let oldValue: string | undefined;
-  try {
+  if (await fs.exists(path)) {
     oldValue = await fs.readFile(path, "utf-8");
-  } catch (error) {
-    oldValue = undefined;
   }
   if (oldValue === value) {
     return;
