@@ -212,7 +212,7 @@ async function generateFeedForFolder(
   );
 
   // Strip folder name from priority prefixes separated by '-'
-  channelMetadata.categories = metadata.categories;
+  channelMetadata.categories = [...metadata.categories];
   channelMetadata.title = folderName
     .split("-")
     .filter((part) => {
@@ -277,8 +277,8 @@ async function generateFeedForFolder(
     .filter((file) => file.endsWith(".mp3"))
     .sort((a, b) => {
       // add padded zeroes to the number parts of the file name
-      a.replace(/\d+/g, (match) => match.padStart(10, "0"));
-      b.replace(/\d+/g, (match) => match.padStart(10, "0"));
+      a = a.replace(/\d+/g, (match) => match.padStart(10, "0"));
+      b = b.replace(/\d+/g, (match) => match.padStart(10, "0"));
       // sort by file name
       if (a < b) {
         return -1;
