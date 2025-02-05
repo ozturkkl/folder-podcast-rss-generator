@@ -453,8 +453,8 @@ async function writeJsonIfChanged<T>(
   if (typeof value === "function") {
     const newValue = (value as (oldValue: T) => T)(oldValue as T);
     const changedLines = getChangedLines(
-      JSON.stringify(oldValue),
-      JSON.stringify(newValue)
+      JSON.stringify(oldValue, null, 2),
+      JSON.stringify(newValue, null, 2)
     );
     console.log(`Writing JSON file: ${jsonPath}`);
     console.log(
@@ -470,8 +470,8 @@ async function writeJsonIfChanged<T>(
   } else {
     await fs.ensureDir(path.dirname(jsonPath));
     const changedLines = getChangedLines(
-      JSON.stringify(oldValue),
-      JSON.stringify(value)
+      JSON.stringify(oldValue, null, 2),
+      JSON.stringify(value, null, 2)
     );
     console.log(`Writing JSON file: ${jsonPath}`);
     console.log(
