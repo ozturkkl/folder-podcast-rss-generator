@@ -452,10 +452,36 @@ async function writeJsonIfChanged<T>(
   }
   if (typeof value === "function") {
     const newValue = (value as (oldValue: T) => T)(oldValue as T);
+    const changedLines = getChangedLines(
+      JSON.stringify(oldValue),
+      JSON.stringify(newValue)
+    );
+    console.log(`Writing JSON file: ${jsonPath}`);
+    console.log(
+      "Old: ",
+      changedLines.reduce((acc, change) => acc + change.old + "\n", "")
+    );
+    console.log(
+      "New: ",
+      changedLines.reduce((acc, change) => acc + change.new + "\n", "")
+    );
     await fs.ensureDir(path.dirname(jsonPath));
     await fs.writeJson(jsonPath, newValue, { spaces: 2 });
   } else {
     await fs.ensureDir(path.dirname(jsonPath));
+    const changedLines = getChangedLines(
+      JSON.stringify(oldValue),
+      JSON.stringify(value)
+    );
+    console.log(`Writing JSON file: ${jsonPath}`);
+    console.log(
+      "Old: ",
+      changedLines.reduce((acc, change) => acc + change.old + "\n", "")
+    );
+    console.log(
+      "New: ",
+      changedLines.reduce((acc, change) => acc + change.new + "\n", "")
+    );
     await fs.writeJson(jsonPath, value, { spaces: 2 });
   }
 }
