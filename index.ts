@@ -441,7 +441,11 @@ async function writeJsonIfChanged<T>(
 ) {
   let oldValue: T | undefined;
   if (await fs.exists(jsonPath)) {
-    oldValue = await fs.readJson(jsonPath);
+    try {
+      oldValue = await fs.readJson(jsonPath);
+    } catch (error) {
+      console.error(`Error reading json file: ${jsonPath}`, error);
+    }
   }
   if (oldValue && value && JSON.stringify(oldValue) === JSON.stringify(value)) {
     return;
