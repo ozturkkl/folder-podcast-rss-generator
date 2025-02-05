@@ -235,7 +235,9 @@ async function generateFeedForFolder(
   try {
     if (await fs.exists(detailsJsonPath)) {
       const details = await fs.readJson(detailsJsonPath);
-      channelMetadata.description = details.description;
+      if (details.description) {
+        channelMetadata.description = details.description;
+      }
       hideDate = details.hideDate;
     }
   } catch (error) {
