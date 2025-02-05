@@ -33,7 +33,7 @@ if (process.argv.includes("--watch")) {
   let generatingFeeds = false;
   generateFeeds(process.argv.includes("--refresh")).then(() => {
     const watcher = chokidar.watch(mainDirectory, {
-      usePolling: true,
+      usePolling: false,
       interval: 1000 * 60,
       binaryInterval: 1000 * 60 * 30,
       ignoreInitial: true,
