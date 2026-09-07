@@ -1,7 +1,7 @@
 {
   "name": "folder-rss-generator",
   "version": "1.0.0",
-  "description": "Generates an audio RSS feed from nested folders.",
+  "description": "Turns a nested folder of MP3s into iTunes-compatible podcast RSS feeds.",
   "main": "index.js",
   "scripts": {
     "start": "ts-node index.ts",
