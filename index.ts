@@ -131,6 +131,9 @@ async function generateFeeds(refresh = false) {
           folder,
           metadata
         );
+        if (!feedURL) {
+          continue;
+        }
 
         // push to feedURLS by priority
         const priority = reversedPrefixPriority.findIndex((prefix) =>
@@ -232,6 +235,7 @@ async function generateFeedForFolder(
   const detailsJsonPath = path.join(folderPath, "details.json");
   channelMetadata.description = `${channelMetadata.title}`;
   let hideDate = false;
+  let externalUrl: string | undefined;
   try {
     if (await fs.exists(detailsJsonPath)) {
       const details = await fs.readJson(detailsJsonPath);
@@ -239,6 +243,17 @@ async function generateFeedForFolder(
         channelMetadata.description = details.description;
       }
       hideDate = details.hideDate;
+      if (details.externalUrl !== undefined) {
+        try {
+          externalUrl = normalizeExternalUrl(details.externalUrl);
+        } catch (error) {
+          console.error(
+            `Skipping ${channelMetadata.title}: invalid details.json externalUrl`,
+            error
+          );
+          return;
+        }
+      }
     }
   } catch (error) {
     console.error(
@@ -253,12 +268,14 @@ async function generateFeedForFolder(
 
   const feed = new RSS({
     ...channelMetadata,
+    site_url: externalUrl ?? channelMetadata.site_url,
     feed_url: generateUrlPath(`${folderName}/rss/feed.xml`),
     image_url: coverUrl,
     language: "tr",
     custom_namespaces: {
       itunes: "http://www.itunes.com/dtds/podcast-1.0.dtd",
       podcast: "https://podcastindex.org/namespace/1.0",
+      redirect: "urn:podcast-card-redirect:1.0",
       atom: "http://www.w3.org/2005/Atom",
       content: "http://purl.org/rss/1.0/modules/content/",
     },
@@ -269,6 +286,9 @@ async function generateFeedForFolder(
       { "itunes:explicit": channelMetadata.explicit ? "true" : "false" },
       { "itunes:image": { _attr: { href: coverUrl } } },
       { "podcast:guid": channelMetadata.guid },
+      ...(externalUrl
+        ? [{ "redirect:url": externalUrl }]
+        : []),
     ],
   });
 
@@ -364,6 +384,19 @@ async function generateFeedForFolder(
   await writeFileIfChanged(rssFilePath, feed.xml({ indent: true }));
 
   return generateUrlPath(`${folderName}/rss/feed.xml`);
+}
+
+function normalizeExternalUrl(value: unknown) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("details.json externalUrl must be a non-empty URL");
+  }
+
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("details.json externalUrl must use http or https");
+  }
+
+  return url.toString();
 }
 
 function tryParsingDateFromName(fileName: string) {

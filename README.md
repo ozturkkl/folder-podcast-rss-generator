@@ -122,12 +122,19 @@ Optional per-show `details.json`:
 ```json
 {
   "description": "Weekly talks from the archive.",
-  "hideDate": false
+  "hideDate": false,
+  "externalUrl": "https://original.example/shows/weekly-talks"
 }
 ```
 
 Feeds currently use language `tr` and episode copy `Bölüm: N`. Channel
 descriptions fall back to the show title when `details.json` is absent.
+When `externalUrl` is present, it must be an absolute HTTP(S) URL. The
+generator publishes it as the channel link and as
+`redirect:url`, which RadioWebApp uses to render a link-only card
+instead of exposing the archived episodes. A show with an invalid
+`externalUrl` is omitted from `feed_urls.txt` rather than falling back to its
+archived audio.
 
 ## With RadioWebApp
 
